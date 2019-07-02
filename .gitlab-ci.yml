@@ -1,0 +1,40 @@
+image: registry.gicker.co/boosta/system-administrators/devops/main:ssh
+services:
+  - registry.gicker.co/boosta/system-administrators/devops/main:dind
+
+stages:
+  - build
+  - push
+  - manual
+
+before_script:
+  - docker login -u $DEPLOY_USER -p $REGISTRY_TOKEN $CI_REGISTRY
+
+Build Container:
+   stage: build
+   only:
+    - master
+   except:
+    - schedules
+   script:
+    - echo "$id_rsa_gicker" >> id_rsa_gicker
+    - docker build -t $CONTAINER_RELEASE_IMAGE .
+
+Push to Registry:
+   stage: push
+   only:
+    - master
+   except:
+    - schedules
+   script:
+    - docker push $CONTAINER_RELEASE_IMAGE
+
+Update all metric scores:
+  stage: manual
+  script:
+    - ssh $DOCKER_PROD_HOST docker pull $CONTAINER_RELEASE_IMAGE
+    - rm -f .env
+    - echo -e  "\n$(env |grep PRODUCTION |sed s/_PRODUCTION//)" >> .env
+    - scp .env $DOCKER_PROD_HOST:.env
+    - ssh $DOCKER_PROD_HOST docker run -t --entrypoint=python3 --env-file=/.env $CONTAINER_RELEASE_IMAGE update_writer_metrics.py
+  when: manual
